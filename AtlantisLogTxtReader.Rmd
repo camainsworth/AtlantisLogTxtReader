@@ -22,17 +22,25 @@ graphics.off
 
 #-------------CHECK ME EACH TIME--------------------------------------------------
 #Atlantis run folder location (contains log.txt)
-#AtlantisRunFolder = "C:/nospaces/trunk/gomatlantis_trunk_ap2017_null/"
-AtlantisRunFolder = "C:/Users/ainsworth/Google Drive/GOMAtlantis/Invertebrate Forcing Scenarios/nofish/"
+AtlantisRunFolder = "C:/nospaces/trunk/GOMAtlantis_oil_1000Factor_363Thresh/"
+#AtlantisRunFolder = "C:/Users/ainsworth/Google Drive/GOMAtlantis/Invertebrate Forcing Scenarios/nofish/"
 
 catchnocatch=FALSE     #set to true to plot a second series (like biomass & catch or biomass & biomass)
 plotobsdata=FALSE      #set to true to plot historical observations as points
 startingyear = 0       #only plots years after this on the historical data; enter 0 to plot entire series from 1980
-PlotAsTif=FALSE        #if false then it produces PDFs. if true it produces TIFs
+PlotAsTif=TRUE        #if false then it produces PDFs. if true it produces TIFs
 tifheight=8
 #----------------------------------------------------------------------------------
 
 Infile <- paste(AtlantisRunFolder,"log.txt",sep="")
+
+#if we are making tifs then put them in a directory called GRAPHS
+GraphOutputDir = paste(AtlantisRunFolder,"GRAPHS/",sep="")
+
+if (!file.exists(GraphOutputDir)) {
+ dir.create(file.path(GraphOutputDir)) 
+}
+
 biomassdata <- read.table(paste(AtlantisRunFolder,"GOM_OUTBiomIndx.txt",sep=""),header=F,fill=T)   #Series 1
 catchdata <- read.table(paste(AtlantisRunFolder,"GOM_OUTBiomIndx.txt",sep=""),header=F,fill=T)        #Series 2 (for catchnocatch)
 #note the raw catch data in catch.txt is in mg/s - needs to be converted to t/year....  
@@ -70,7 +78,7 @@ library(sm)
 
 ```{r read log txt, echo=FALSE}
 #READ LOG.TXT FILE BY STRING INTO VARIABLE 'X'
-  data <- readLines(Infile)
+data <- readLines(Infile)
 
   #FIND THE NUMBER OF TIMESTEPS IN LOG.TXT
   timesteps <- 0
@@ -82,7 +90,7 @@ library(sm)
     if(is.na(current_row[[1]][1])) {current_row[[1]][1] <- "-999"}
     if(is.na(prior_row[[1]][1])) {prior_row[[1]][1] <- "-999"}
   
-    if(current_row[[1]][1] == "Time:" & prior_row[[1]][1] != "Time:" & current_row[[1]][4] != "catch" & current_row[[1]][6] != "tier" & current_row[[1]][3] != "year")
+    if(current_row[[1]][1] == "Time:" & current_row[[1]][4] != "catch" & current_row[[1]][6] != "tier" & current_row[[1]][3] != "year")
     {
     timesteps <- timesteps + 1
     #print(timesteps)
@@ -91,7 +99,7 @@ library(sm)
     } 
   }
   
-
+pb <- txtProgressBar(min = 0, max = timesteps, style = 3) #text based bar
 
   #DECLARE ARRAYS TO HOLD DATA FROM LOG.TXT
   Biomass <- array(dim=c(length(Group_Names[ ,1]), timesteps))  #X=GROUP, Y=TIMESTEP -- HOLD TOTAL BIOMASS
@@ -148,6 +156,10 @@ library(sm)
   #BEGIN READING DATA
   for (j in 2:timesteps) #J WILL BE COUNTER FOR TIMESTEPS  
   {
+    
+  Sys.sleep(0.1)
+  setTxtProgressBar(pb,j)
+        
   #print(paste("Timestep being evaluated:",j,sep=" "))
   i<-index[j]
   current_row <- strsplit(data[i], split=" ")
@@ -226,6 +238,7 @@ library(sm)
    
   } #END OF TIMESTEP LOOP FOR READING NUMBERS FROM LOG.TXT
   
+  close(pb)
   
   #CONVERT STRING ARRAYS TO NUMERIC
   Biomass_Num <- array(as.double(Biomass), dim=dim(Biomass))
@@ -253,7 +266,7 @@ library(sm)
   #BIOMASS
   
   if (PlotAsTif == FALSE) { 
-  Outfile <- paste(AtlantisRunFolder,"Biomass_Plots.pdf",sep="")
+  Outfile <- paste(GraphOutputDir,"Biomass_Plots.pdf",sep="")
   pdf(Outfile)
   } 
   
@@ -269,7 +282,7 @@ library(sm)
           
     
     if (PlotAsTif == TRUE) {
-      Outfile = paste(AtlantisRunFolder,"Biomass",NumberOfFigs,".tif",sep="")    
+      Outfile = paste(GraphOutputDir,"Biomass",NumberOfFigs,".tif",sep="")    
       tiff(filename = Outfile,width=6, height=tifheight, units="in", res=600, compression = "lzw")
     }
     
@@ -339,7 +352,7 @@ library(sm)
   #RESERVE NITROGEN / INITITAL RESERVE NITROGEN , X=GROUP, Y=AGECLASS, Z=TIMESTEP 
 
   if (PlotAsTif == FALSE){  
-  Outfile <- paste(AtlantisRunFolder,"Res_N_Plots.pdf",sep="")
+  Outfile <- paste(GraphOutputDir,"Res_N_Plots.pdf",sep="")
   pdf(Outfile)  
   }
 
@@ -355,7 +368,7 @@ library(sm)
   {
 
       if (PlotAsTif == TRUE) {
-      Outfile = paste(AtlantisRunFolder,"Res_N",NumberOfFigs,".tif",sep="")    
+      Outfile = paste(GraphOutputDir,"Res_N",NumberOfFigs,".tif",sep="")    
       tiff(filename = Outfile,width=6, height=tifheight, units="in", res=600, compression = "lzw")
     }
     
@@ -435,7 +448,7 @@ library(sm)
 
   #STRUCTURAL NITROGEN / INITITAL STRUCTURAL NITROGEN , X=GROUP, Y=AGECLASS, Z=TIMESTEP 
   if (PlotAsTif == FALSE){  
-  Outfile <- paste(AtlantisRunFolder,"Str_N_Plots.pdf",sep="")
+  Outfile <- paste(GraphOutputDir,"Str_N_Plots.pdf",sep="")
   pdf(Outfile)  
   }
 
@@ -452,7 +465,7 @@ library(sm)
   {
 
     if (PlotAsTif == TRUE) {
-      Outfile = paste("Str_N",NumberOfFigs,".tif",sep="")    
+      Outfile = paste(GraphOutputDir,"Str_N",NumberOfFigs,".tif",sep="")    
       tiff(filename = Outfile,width=6, height=tifheight, units="in", res=600, compression = "lzw")
     }
    
@@ -514,8 +527,8 @@ library(sm)
   
   }
 
-  mtext("Year",1,adj=0.5,outer=T,line=0,cex=1.2,padj=0.7)  
-  mtext("Structural N / Initial Structural N",2,adj=0.5,outer=T,cex=1.2,padj=-1.2)
+  #mtext("Year",1,adj=0.5,outer=T,line=0,cex=1.2,padj=0.7)  
+  #mtext("Structural N / Initial Structural N",2,adj=0.5,outer=T,cex=1.2,padj=-1.2)
 
     if (PlotAsTif==FALSE){
     dev.off()  
@@ -527,7 +540,7 @@ library(sm)
   #-------------------PLOT NUMBERS---------------------------------------------------
   
   if (PlotAsTif == FALSE){  
-  Outfile <- paste(AtlantisRunFolder,"Density_Plots.pdf",sep="")
+  Outfile <- paste(GraphOutputDir,"Density_Plots.pdf",sep="")
   pdf(Outfile)  
   }
   
@@ -543,7 +556,7 @@ library(sm)
   while (k <= length(Group_Names[ , 1]))
   {
     if (PlotAsTif == TRUE) {
-      Outfile = paste(AtlantisRunFolder,"Numbers",NumberOfFigs,".tif",sep="")    
+      Outfile = paste(GraphOutputDir,"Numbers",NumberOfFigs,".tif",sep="")    
       tiff(filename = Outfile,width=6, height=tifheight, units="in", res=600, compression = "lzw")
     }
     
@@ -643,7 +656,7 @@ Btimesteps<-as.numeric(as.character(Btimesteps))
 
 
  if (PlotAsTif == FALSE) { 
-  Outfile <- paste(AtlantisRunFolder,"HistoricalFits.pdf",sep="")
+  Outfile <- paste(GraphOutputDir,"HistoricalFits.pdf",sep="")
   pdf(Outfile)
   }
 
@@ -692,7 +705,9 @@ if (plotsfound %% (rows*columns) == 1 && plotthis == TRUE) {
   dev.off()
   print(paste(plotsfound,Group_Names[i,1],i,sep=" "))
   NumberOfFigs = NumberOfFigs + 1
-  Outfile = paste(AtlantisRunFolder,"Historical",NumberOfFigs,".tif",sep="")    
+  
+  Outfile = paste(GraphOutputDir,"Historical",NumberOfFigs,".tif",sep="")    
+  
   tiff(filename = Outfile,width=6, height=tifheight, units="in", res=600, compression = "lzw") 
   par(mfcol=c(rows,columns))
   par(mar=c(2,2,2,2))
