@@ -1,0 +1,770 @@
+---
+title: "AtlantisLogTxtReader"
+author: "Cam Ainsworth"
+date: "May 25, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Atlantis Log.txt Reader
+This code processes output files of the GOM Atlantis model to produce 5 plots Biomass, Structural Nitrogen, Reserve Nitrogen, Numbers
+Requires Group_Names.csv to be in the same directory as this r code. 
+Optionally it fits to observational data.  
+Should work with either trunk or bec_dev
+
+```{r initialization, echo=FALSE}
+cat("\014")
+rm(list=ls())
+graphics.off
+
+#-------------CHECK ME EACH TIME--------------------------------------------------
+#Atlantis run folder location (contains log.txt)
+#AtlantisRunFolder = "C:/nospaces/trunk/gomatlantis_trunk_ap2017_null/"
+AtlantisRunFolder = "C:/Users/ainsworth/Google Drive/GOMAtlantis/Invertebrate Forcing Scenarios/nofish/"
+
+catchnocatch=FALSE     #set to true to plot a second series (like biomass & catch or biomass & biomass)
+plotobsdata=FALSE      #set to true to plot historical observations as points
+startingyear = 0       #only plots years after this on the historical data; enter 0 to plot entire series from 1980
+PlotAsTif=FALSE        #if false then it produces PDFs. if true it produces TIFs
+tifheight=8
+#----------------------------------------------------------------------------------
+
+Infile <- paste(AtlantisRunFolder,"log.txt",sep="")
+biomassdata <- read.table(paste(AtlantisRunFolder,"GOM_OUTBiomIndx.txt",sep=""),header=F,fill=T)   #Series 1
+catchdata <- read.table(paste(AtlantisRunFolder,"GOM_OUTBiomIndx.txt",sep=""),header=F,fill=T)        #Series 2 (for catchnocatch)
+#note the raw catch data in catch.txt is in mg/s - needs to be converted to t/year....  
+
+#These files should be in the same folder as this R code
+thisdir = getwd()
+Group_Names <- read.table(paste(thisdir,"/Group_Names.csv",sep=""), header=TRUE, sep=",") 
+
+if (plotobsdata == TRUE) {
+realbiomass<-read.csv(paste(thisdir,"/realbiomassGOM.csv",sep=""),header=F,fill=T) #observational data (for plotobsdata)
+startandgoal<-read.csv(paste(thisdir,"/start and goal biomass.csv",sep=""),header=F)       
+}
+
+#Suppress plotting of group(s) by using verboten.  Null plots all groups
+verboten="null"
+#verboten[1:3]=c("Adult blue crab","Juv blue crab","Adult blue shrimp")                                            
+#-------------------------------------------------------------------------------------
+
+#DECLARATIONS                                                                                       
+library(sm) 
+
+#INITIAL PARAMETERS
+  
+  #Name_File <- "Group_Names.csv" # FILE CONTAINING NAMES OF FUNCTIONAL GROUPS  
+  StartDay <- 5
+  StartYear <- 1980
+  
+  DoWhat <- 1 #1 is biomass, rN/sN and numbers: 2 is biomass only
+  index<--1
+  colperpage<-3   #historical has it's own 
+  rowperpage<-4
+    
+
+```
+
+```{r read log txt, echo=FALSE}
+#READ LOG.TXT FILE BY STRING INTO VARIABLE 'X'
+  data <- readLines(Infile)
+
+  #FIND THE NUMBER OF TIMESTEPS IN LOG.TXT
+  timesteps <- 0
+  for (i in 2:length(data))
+  {
+    current_row <- strsplit(data[i], split=" ")
+    prior_row <- strsplit(data[i-1], split=" ")
+    
+    if(is.na(current_row[[1]][1])) {current_row[[1]][1] <- "-999"}
+    if(is.na(prior_row[[1]][1])) {prior_row[[1]][1] <- "-999"}
+  
+    if(current_row[[1]][1] == "Time:" & prior_row[[1]][1] != "Time:" & current_row[[1]][4] != "catch" & current_row[[1]][6] != "tier" & current_row[[1]][3] != "year")
+    {
+    timesteps <- timesteps + 1
+    #print(timesteps)
+    index[timesteps]=i #Cam: this records what line number each time step begins on
+    
+    } 
+  }
+  
+
+
+  #DECLARE ARRAYS TO HOLD DATA FROM LOG.TXT
+  Biomass <- array(dim=c(length(Group_Names[ ,1]), timesteps))  #X=GROUP, Y=TIMESTEP -- HOLD TOTAL BIOMASS
+  Res_N <- array(dim=c(length(Group_Names[ ,1]), 10, timesteps)) #X=GROUP, Y=AGECLASS, Z=TIMESTEP -- HOLDS RESERVE NITROGEN
+  Str_N <- array(dim=c(length(Group_Names[ ,1]), 10, timesteps)) #X=GROUP, Y=AGECLASS, Z=TIMESTEP -- HOLD STRUCTURAL NITROGEN
+  Den <- array(dim=c(length(Group_Names[ ,1]), 10, timesteps)) #X=GROUP, Y=AGECLASS, Z=TIMESTEP -- HOLDS NUMBERS
+  Timestep <- 0
+
+  
+  #FIND FIRST TIME STEP (BEYOND INITIAL CONDITIONS)
+  i <- 1
+  current_row <- strsplit(data[i], split=" ")
+  while (current_row[[1]][1] != "Time:" || current_row[[1]][4] == "catch")
+  {
+   i <- i + 1
+   current_row <- strsplit(data[i], split=" ")
+   if(is.na(current_row[[1]][1]))
+   {
+    current_row[[1]] <- c("-999", "-999", "-999")
+   }
+  }
+  
+  i <- i + 1
+  current_row <- strsplit(data[i], split=" ")
+  while (current_row[[1]][1] == "Time:") 
+  {
+   i <- i + 1
+   current_row <- strsplit(data[i], split=" ")
+   if(is.na(current_row[[1]][1]))
+   {current_row[[1]] <- c("-999", "-999", "-999")}
+  }
+
+  i <- i + 1
+  current_row <- strsplit(data[i], split=" ")
+  while (current_row[[1]][1] != "Time:" || current_row[[1]][4] == "catch")
+  {
+   i <- i + 1
+   current_row <- strsplit(data[i], split=" ")
+   if(is.na(current_row[[1]][1]))
+   {
+    current_row[[1]] <- c("-999", "-999", "-999")
+   }
+  }
+  
+  #i IS NOW THE ROW NUMBER FOR FIRST TIMESTEP
+  if (i==index[2]){print("INDEX WORKING")}else{
+  print("PROBLEM WITH INDEX")
+  print(paste("index thinks first timestep is on line",index[2],"but peter's thinks its on",i,sep=" "))
+  }
+  
+ #i<-index[2] 
+
+    
+  #BEGIN READING DATA
+  for (j in 2:timesteps) #J WILL BE COUNTER FOR TIMESTEPS  
+  {
+  #print(paste("Timestep being evaluated:",j,sep=" "))
+  i<-index[j]
+  current_row <- strsplit(data[i], split=" ")
+  
+    #BIOMASS DATA WILL BE FIRST IN FILE 
+    while (current_row[[1]][1] == "Time:" & current_row[[1]][4] != "catch" & current_row[[1]][6] != "tier")
+    {
+      current_grp <- current_row[[1]][4]
+      #print(current_grp)
+      grp_index <- which(Group_Names[ ,1] == current_grp)
+   
+      if (j == 2) #RECORD INITIAL CONDITIONS
+      {
+        Biomass[grp_index, 1] <-  current_row[[1]][16]
+        Timestep[1] <- 0
+      }
+   
+      Biomass[grp_index, j] <-  current_row[[1]][12]
+      #if (j==3){print(paste("biomass for ts3 is",Biomass[grp_index,j],sep=" "))}
+      tmp <- strsplit(current_row[[1]][2], split=",")
+      Timestep[j] <- tmp[[1]][1]
+
+      i <- i + 1
+      
+   
+      current_row <- strsplit(data[i], split=" ")
+      if(is.na(current_row[[1]][1]))
+      {
+        current_row[[1]] <- c("-999", "-999", "-999")
+      }
+    }         #end while
+    
+    
+    
+    
+    
+    #NOW READ NITROGEN AND DENSITY NUMBERS
+    while (current_row[[1]][1] != "Time:" & i < length(data))
+    {
+      tmp <- strsplit(current_row[[1]][2], split="-")
+      if (tmp[[1]][1] == "sn")
+      {
+        current_grp <- strsplit(current_row[[1]][1], split="-")
+        grp_index <- which(Group_Names[ ,1] == current_grp[[1]][1])
+   
+        if (j == 2) #RECORD INITIAL CONDITIONS
+        {
+          tmp <- strsplit(current_row[[1]][18], split=",")
+          Res_N[grp_index, as.numeric(current_grp[[1]][2])+1, 1] <-  tmp[[1]][1]
+        
+          tmp <- strsplit(current_row[[1]][16], split=",")
+          Str_N[grp_index, as.numeric(current_grp[[1]][2])+1, 1] <-  tmp[[1]][1]
+        
+          tmp <- strsplit(current_row[[1]][20], ")")
+          Den[grp_index, as.numeric(current_grp[[1]][2])+1, 1] <-  tmp[[1]][1]
+
+        } 
+
+        tmp <- strsplit(current_row[[1]][11], split=",")
+        Res_N[grp_index, as.numeric(current_grp[[1]][2])+1, j] <-  tmp[[1]][1]
+       
+        tmp <- strsplit(current_row[[1]][9], split=",")
+        Str_N[grp_index, as.numeric(current_grp[[1]][2])+1, j] <-  tmp[[1]][1]
+        
+        Den[grp_index, as.numeric(current_grp[[1]][2])+1, j] <-  current_row[[1]][13]
+      }
+      
+      i <- i + 1
+      
+      current_row <- strsplit(data[i], split=" ")
+      if(is.na(current_row[[1]][1]))
+      {
+        current_row[[1]] <- c("-999", "-999", "-999")
+      }
+    } #END OF WHILE LOOP FOR READING NITROGEN AND DENSITY NUMBERS 
+   
+  } #END OF TIMESTEP LOOP FOR READING NUMBERS FROM LOG.TXT
+  
+  
+  #CONVERT STRING ARRAYS TO NUMERIC
+  Biomass_Num <- array(as.double(Biomass), dim=dim(Biomass))
+  Res_Num <- array(as.double(Res_N), dim=dim(Res_N))
+  Str_Num <- array(as.double(Str_N), dim=dim(Str_N))
+  Den_Num <- array(as.double(Den), dim=dim(Den))
+  Time_Num <- array(as.numeric(Timestep))
+  
+  
+
+```
+
+```{r create pdf or tif plots, echo=FALSE}
+
+ 
+  
+  #GET NAME OF DIRECTORY FOR NAMING
+  
+  dirname <- getwd()
+  dirname <- strsplit(dirname, split="/")
+  dirlength <- length(dirname[[1]])
+  dirname <- dirname[[1]][dirlength]
+
+  
+  #BIOMASS
+  
+  if (PlotAsTif == FALSE) { 
+  Outfile <- "Biomass_Plots.pdf"
+  pdf(Outfile)
+  } 
+  
+  ylabel <- ""
+  xlabel <- "" 
+  
+  k <- 1
+  NumberOfFigs = 1
+  while (k <= length(Group_Names[ , 1]))
+  { 
+
+
+          
+    
+    if (PlotAsTif == TRUE) {
+      Outfile = paste("Biomass",NumberOfFigs,".tif",sep="")    
+      tiff(filename = Outfile,width=6, height=tifheight, units="in", res=600, compression = "lzw")
+    }
+    
+    
+  #windows(width=8.5,height=11)
+  par(mar=c(3,2,3,2))
+  par(omi=c(.5,.6,0,0))
+  par(mfrow=c(rowperpage,colperpage))
+  
+  
+  
+    l=1
+    while (l <= (rowperpage*colperpage) && k <= length(Group_Names[ , 1]))
+    {  
+    
+      if (k <= length(Group_Names[ , 1])) 
+      {
+        if(is.na(Biomass_Num[k, 1]))
+        {
+          Biomass_Num[k, ] <- 0
+          plottitle <- paste(Group_Names[k, 5], "\n", Group_Names[k, 1], ", ", Group_Names[k, 4], "\n", "(Not in Model)", sep="")
+          ymin <- -1
+          ymax <- 1
+        }else
+          {  
+          plottitle <- paste(Group_Names[k, 5], "\n", Group_Names[k, 1], sep="")  
+          #replace(Biomass_Num[k,],is.na(Biomass_Num[k,]),0)
+          ymin <- 0.9 * min(Biomass_Num[k, ],na.rm=TRUE)
+          ymax <- 1.1 * max(Biomass_Num[k, ],na.rm=TRUE) 
+          }
+        
+        printthis=TRUE
+        #if (Group_Names[k,5] %in% verboten) {
+        #printthis=FALSE
+        #} 
+
+        if (printthis == TRUE)
+        {
+        l=l+1
+        plot((Time_Num + StartDay)/360 + StartYear, Biomass_Num[k, ], ylim=c(0, ymax), ylab = ylabel, xlab=xlabel, main=plottitle, lwd=2, type='l', cex.lab=1, cex.axis=1, col='black',lty='solid')
+        }     
+
+      }
+      k <- k+1
+    }
+    NumberOfFigs = NumberOfFigs + 1
+
+    mtext("Year",1,adj=0.5,outer=T,line=0,cex=1.2,padj=0.7)
+    mtext("Biomass (Metric Tonnes)",2,adj=0.5,outer=T,cex=1.2,padj=-1.2)
+    if (PlotAsTif==TRUE){
+    dev.off()
+    }
+  
+  }
+  
+  
+  
+  if (PlotAsTif==FALSE){
+    mtext("Year",1,adj=0.5,outer=T,line=0,cex=1.2,padj=0.7)
+    mtext("Biomass (Metric Tonnes)",2,adj=0.5,outer=T,cex=1.2,padj=-1.2)
+    dev.off()  
+    }
+  
+  msg=paste("Biomass Plots Saved To:", Outfile)
+  print(msg)
+  NumberOfFigs = 1
+  #RESERVE NITROGEN / INITITAL RESERVE NITROGEN , X=GROUP, Y=AGECLASS, Z=TIMESTEP 
+
+  if (PlotAsTif == FALSE){  
+  Outfile <- "Res_N_Plots.pdf"
+  pdf(Outfile)  
+  }
+
+  ylabel = ""
+  xlabel = ""
+  #ylabel <- "Res_N / Initial Res_N"
+  #xlabel <- "Year"
+  
+  rainbowColors<-rainbow(10)
+  
+  k=1
+  while (k <= length(Group_Names[ , 1]))
+  {
+
+      if (PlotAsTif == TRUE) {
+      Outfile = paste("Res_N",NumberOfFigs,".tif",sep="")    
+      tiff(filename = Outfile,width=6, height=tifheight, units="in", res=600, compression = "lzw")
+    }
+    
+  #windows(width=8.5,height=11)
+  par(mar=c(3,2,3,2))
+  par(omi=c(.5,.6,0,0))
+
+  
+    par(mfrow=c(rowperpage,colperpage))
+    
+    #for (l in 1:(rowperpage*colperpage))
+    l=1
+    while (l <= (rowperpage*colperpage) && k <=length(Group_Names[ , 1]))
+    {
+
+    
+      if (k <=length(Group_Names[ , 1]))
+      { 
+        if(is.na(Res_Num[k, 1, 1]))
+        {
+          Res_Num[k, 1, ] <- 0
+          plottitle <- paste(Group_Names[k, 5], "\n", Group_Names[k, 1], ", ", Group_Names[k, 4], "\n", "(Not in Model)", sep="")
+          #plot((Time_Num + StartDay)/360 + StartYear, Res_Num[k, 1, ], ylim=c(0,2),ylab = ylabel, xlab=xlabel, main=plottitle, lwd=1,type='l', cex.lab=1, cex.axis=1, col = rainbowColors[m],lty=m)
+          plot((Time_Num + StartDay)/360 + StartYear, Res_Num[k, 1, ], ylim=c(0,2),ylab = ylabel, xlab=xlabel, main=plottitle, lwd=1,type='l', cex.lab=1, cex.axis=1, col = gray(m/10),lty=m)
+        }else
+        {
+          ymin <- 0.9 * min(Res_Num[k, , ]/Res_Num[k, ,1], na.rm =TRUE) 
+          ymax <- 1.1 * max(Res_Num[k, , ]/Res_Num[k, ,1], na.rm =TRUE)
+ 
+   printthis=TRUE
+   if (Group_Names[k,5] %in% verboten) {
+   printthis=FALSE
+   } 
+   if (printthis == TRUE){
+   l=l+1
+
+          for (m in 1:10)
+          {
+          
+            if (m == 1)
+            {
+              plottitle <- paste(Group_Names[k, 5], "\n", Group_Names[k, 1], ", ", Group_Names[k, 4], sep="")
+              #plot((Time_Num + StartDay)/360 + StartYear, Res_Num[k, m, ]/Res_Num[k, m, 1], ylim=c(ymin,ymax),ylab = ylabel, xlab=xlabel, main=plottitle, lwd=1,type='l', cex.lab=1, cex.axis=1, col = rainbowColors[m],lty=m)
+              plot((Time_Num + StartDay)/360 + StartYear, Res_Num[k, m, ]/Res_Num[k, m, 1], ylim=c(ymin,ymax),ylab = ylabel, xlab=xlabel, main=plottitle, lwd=1,type='l', cex.lab=1, cex.axis=1, col = gray(m/10),lty=m)
+            }else
+            {
+              lines((Time_Num + StartDay)/360 + StartYear, Res_Num[k, m, ]/Res_Num[k, m, 1], lwd=1,type='l', col = rainbowColors[m],lty=m)
+            }
+         
+          }
+        }
+        }
+      }
+      k <- k+1 
+    }
+  NumberOfFigs = NumberOfFigs + 1
+  mtext("Year",1,adj=0.5,outer=T,line=0,cex=1.2,padj=0.7)
+  mtext("Reserve N / Initial Reserve N",2,adj=0.5,outer=T,cex=1.2,padj=-1.2)
+
+    if (PlotAsTif==TRUE){
+    dev.off()
+    }
+  
+  }
+
+
+  #mtext("Year",1,adj=0.5,outer=T,line=-39,cex=1.2,padj=0.7)
+  #mtext("Reserve N / Initial Reserve N",2,adj=0.9,outer=T,cex=1.2,padj=-1.2)
+
+    if (PlotAsTif==FALSE){
+    dev.off()  
+    }
+  msg=paste("Reserve N Plots Saved To:", Outfile)
+  print(msg)
+  NumberOfFigs = 1
+
+
+  #STRUCTURAL NITROGEN / INITITAL STRUCTURAL NITROGEN , X=GROUP, Y=AGECLASS, Z=TIMESTEP 
+  if (PlotAsTif == FALSE){  
+  Outfile <- "Str_N_Plots.pdf"
+  pdf(Outfile)  
+  }
+
+  
+  ylabel = ""
+  xlabel = ""
+  #ylabel <- "Str_N / Initial Str_N"
+  #xlabel <- "Year"
+  
+  rainbowColors<-rainbow(10)
+  
+  k <- 1
+  while (k <= length(Group_Names[ , 1]))
+  {
+
+    if (PlotAsTif == TRUE) {
+      Outfile = paste("Str_N",NumberOfFigs,".tif",sep="")    
+      tiff(filename = Outfile,width=6, height=tifheight, units="in", res=600, compression = "lzw")
+    }
+   
+ # windows(width=8.5,height=11)
+  par(mar=c(3,2,3,2))
+  par(omi=c(.5,.6,0,0))
+
+  
+    par(mfrow=c(rowperpage,colperpage))
+    l=1
+    while (l <= (rowperpage*colperpage) && k <=length(Group_Names[ , 1]))
+      {
+    for (l in 1:(rowperpage*colperpage))
+    {
+      if (k <=length(Group_Names[ , 1]))
+      { 
+        if(is.na(Str_Num[k, 1, 1]))
+        {
+          Str_Num[k, 1, ] <- 0
+          plottitle <- paste(Group_Names[k, 5], "\n", Group_Names[k, 1], ", ", Group_Names[k, 4], "\n", "(Not in Model)", sep="")
+          plot((Time_Num + StartDay)/360 + StartYear, Str_Num[k, 1, ], ylim=c(0,2),ylab = ylabel, xlab=xlabel, main=plottitle, lwd=1,type='l', cex.lab=1, cex.axis=1, col = rainbowColors[m],lty=m)
+        }else
+        {
+          ymin <- 0.9 * min(Str_Num[k, , ]/Str_Num[k, ,1], na.rm =TRUE) 
+          ymax <- 1.1 * max(Str_Num[k, , ]/Str_Num[k, ,1], na.rm =TRUE)
+ 
+   printthis=TRUE
+   if (Group_Names[k,5] %in% verboten) {
+   printthis=FALSE
+   } 
+   if (printthis == TRUE){
+   l=l+1
+
+          for (m in 1:10)
+          {
+            if (m == 1)
+            {
+              plottitle <- paste(Group_Names[k, 5], "\n", Group_Names[k, 1], ", ", Group_Names[k, 4], sep="")
+              #plot((Time_Num + StartDay)/360 + StartYear, Str_Num[k, m, ]/Str_Num[k, m, 1], ylim=c(0,2),ylab = ylabel, xlab=xlabel, main=plottitle, lwd=1,type='l', cex.lab=1, cex.axis=1, col = rainbowColors[m],lty=m)
+              plot((Time_Num + StartDay)/360 + StartYear, Str_Num[k, m, ]/Str_Num[k, m, 1], ylim=c(ymin,ymax),ylab = ylabel, xlab=xlabel, main=plottitle, lwd=1,type='l', cex.lab=1, cex.axis=1, col = rainbowColors[m],lty=m)
+            }else
+            {
+              lines((Time_Num + StartDay)/360 + StartYear, Str_Num[k, m, ]/Str_Num[k, m, 1], lwd=1,type='l', col = rainbowColors[m],lty=m)
+            }      
+          }
+          }
+        }
+      }
+      k <- k+1 
+    }
+     }
+    NumberOfFigs = NumberOfFigs + 1
+  mtext("Year",1,adj=0.5,outer=T,line=0,cex=1.2,padj=0.7)
+  mtext("Structural N / Initial Structural N",2,adj=0.5,outer=T,cex=1.2,padj=-1.2)
+    if (PlotAsTif==TRUE){
+    dev.off()
+    }
+  
+  
+  }
+
+  mtext("Year",1,adj=0.5,outer=T,line=0,cex=1.2,padj=0.7)  
+  mtext("Structural N / Initial Structural N",2,adj=0.5,outer=T,cex=1.2,padj=-1.2)
+
+    if (PlotAsTif==FALSE){
+    dev.off()  
+    }
+  msg=paste("Str_N Plots Saved To:", Outfile)
+  print(msg)
+  NumberOfFigs=1
+  
+  #-------------------PLOT NUMBERS---------------------------------------------------
+  
+  if (PlotAsTif == FALSE){  
+  Outfile <- "Density_Plots.pdf"
+  pdf(Outfile)  
+  }
+  
+
+  ylabel = ""
+  xlabel = ""
+  #ylabel <- "Numbers"
+  #xlabel <- "Year"
+  
+  rainbowColors<-rainbow(10)
+  
+  k=1
+  while (k <= length(Group_Names[ , 1]))
+  {
+    if (PlotAsTif == TRUE) {
+      Outfile = paste("Numbers",NumberOfFigs,".tif",sep="")    
+      tiff(filename = Outfile,width=6, height=tifheight, units="in", res=600, compression = "lzw")
+    }
+    
+  #windows(width=8.5,height=11)
+  par(mar=c(3,2,3,2))
+  par(omi=c(.5,.6,0,0))
+
+    par(mfrow=c(rowperpage,colperpage))
+
+    l=1
+    while (l <= (rowperpage*colperpage) && k <= length(Group_Names[ , 1]))
+
+  
+    for (l in 1:(rowperpage*colperpage))
+    { 
+    
+        
+   # if (l%%rowperpage != 0){ylabel<-""}
+   # if (l%%colperpage != 0){xlabel<-""}
+    
+    
+      if (k <=length(Group_Names[ , 1]))
+      {
+        if(is.na(Den_Num[k, 1, 1]))
+        {
+          Den_Num[k, 1, ] <- 0
+          plottitle <- paste(Group_Names[k, 5], "\n", Group_Names[k, 1], ", ", Group_Names[k, 4], "\n", "(Not in Model)", sep="")
+          #plot((Time_Num + StartDay)/360 + StartYear, Den_Num[k, 1, ], ylab = ylabel, xlab=xlabel, main=plottitle, lwd=1,type='l', cex.lab=1, cex.axis=1, col = rainbowColors[m],lty=m)
+          plot((Time_Num + StartDay)/360 + StartYear, Den_Num[k, 1, ], ylab = ylabel, xlab=xlabel, main=plottitle, lwd=1,type='l', cex.lab=1, cex.axis=1, col = grey(m/10),lty=m)
+        }else
+        {
+          ymin <- 0.9 * min(Den_Num[k, , ], na.rm =TRUE)
+          ymax <- 1.1 * max(Den_Num[k, , ], na.rm =TRUE) 
+ 
+ 
+
+   printthis=TRUE
+   if (Group_Names[k,5] %in% verboten) {
+   printthis=FALSE
+   } 
+   if (printthis == TRUE){
+   l=l+1
+
+   
+          for (m in 1:10)
+          {
+            if (m == 1)
+            {
+              plottitle <- paste(Group_Names[k, 5], "\n", Group_Names[k, 1], ", ", Group_Names[k, 4], sep="")
+              #plot((Time_Num + StartDay)/360 + StartYear, Den_Num[k, m, ], ylim=c(0, ymax), ylab = ylabel, xlab=xlabel, main=plottitle, lwd=1,type='l', cex.lab=1, cex.axis=1, col = rainbowColors[m],lty=m)
+              plot((Time_Num + StartDay)/360 + StartYear, Den_Num[k, m, ], ylim=c(0, ymax), ylab = ylabel, xlab=xlabel, main=plottitle, lwd=1,type='l', cex.lab=1, cex.axis=1, col = grey(m/10),lty=m)
+            }else
+            {
+              lines((Time_Num + StartDay)/360 + StartYear, Den_Num[k, m, ], lwd=1,type='l', col = rainbowColors[m],lty=m)
+            }      
+          }
+        }
+        }
+      }
+      k <- k+1 
+    }
+  
+  NumberOfFigs = NumberOfFigs + 1
+  mtext("Year",1,adj=0.5,outer=T,line=0,cex=1.2,padj=0.7)
+  mtext("Number of individuals",2,adj=0.5,outer=T,cex=1.2,padj=-1.2)
+    if (PlotAsTif==TRUE){
+    dev.off()
+    }
+  
+  }
+                  
+  
+
+    if (PlotAsTif==FALSE){
+    dev.off()  
+    }
+    
+  msg=paste("Numbers Plots Saved To:", Outfile)
+  print(msg)
+
+  #graphics.off()
+                    
+#} #END OF FUNCTION                           
+
+
+
+```
+
+```{r plot historical observations, echo=FALSE}
+
+if (plotobsdata == T){
+biomass=biomassdata[2+(startingyear*12):length(biomassdata[,1]),2:63]
+Btimesteps = biomassdata[2+(startingyear*12):length(biomassdata[,1]),1]
+thenames <- biomassdata[1,2:length(biomassdata[1,])] #names are same for catch and biomass files
+thenames<-as.matrix(thenames[1:61])
+Btimesteps<-as.numeric(as.character(Btimesteps))
+
+
+ if (PlotAsTif == FALSE) { 
+  Outfile <- "HistoricalFits.pdf"
+  pdf(Outfile)
+  }
+
+columns=3                                                    
+rows=6
+plotsfound = 0
+NumberOfFigs = 0
+
+#windows(width=8.5,height=11)
+if (PlotAsTif == FALSE) {
+par(mfcol=c(rows,columns))
+par(mar=c(2,2,2,2))
+par(omi=c(.5,.5,0,.5))
+}
+
+for (i in 1:61){
+
+
+thisbiomass<-as.numeric(as.character(biomass[,i]))
+
+titlestring<-paste(Group_Names[i,2],Group_Names[i,1],sep=" ")
+par(cex.main = 0.9)
+
+Byears=1980+startingyear+Btimesteps*(1/365)                    
+#plot(x=Byears,y=thisbiomass,main=titlestring,type="l",ylim=ylimit,xlim=c(Byears[1],Byears[length(Byears)])) 
+
+
+#RealToPlot = -999
+RealToPlot = NA
+for (FindRealData in 1:length(realbiomass[1,]))  {
+ if (realbiomass[1,FindRealData] == thenames[i]){
+     RealToPlot = as.numeric(as.character(realbiomass[2+startingyear:length(realbiomass[,FindRealData]),FindRealData]))
+ }
+}
+
+#if (RealToPlot[!is.na(RealToPlot)][1] != -999)    #checks to make sure there is some observed biomass for this species, if so plot
+plotthis = FALSE
+if (sum(!is.na(RealToPlot))>0)
+{
+plotsfound = plotsfound + 1
+plotthis = TRUE
+}
+
+if (PlotAsTif == TRUE) {
+if (plotsfound %% (rows*columns) == 1 && plotthis == TRUE) {
+  dev.off()
+  print(paste(plotsfound,Group_Names[i,1],i,sep=" "))
+  NumberOfFigs = NumberOfFigs + 1
+  Outfile = paste("Historical",NumberOfFigs,".tif",sep="")    
+  tiff(filename = Outfile,width=6, height=tifheight, units="in", res=600, compression = "lzw") 
+  par(mfcol=c(rows,columns))
+  par(mar=c(2,2,2,2))
+  par(omi=c(.5,.5,0,.5)) 
+  
+}
+}
+
+if (plotthis==TRUE) {
+#scale the RealToPlot data to minimize SS
+YearSequence=Byears%%1==0
+YearBiomass=thisbiomass[YearSequence]
+RealX = seq(1980+startingyear,2009,1)  
+
+if (length(YearBiomass)<length(RealToPlot)) 
+{
+  FitRealToPlot=RealToPlot[1:length(YearBiomass)]
+  FitThisBiomass=YearBiomass
+} else if (length(YearBiomass)>length(RealToPlot)){
+  FitRealToPlot=RealToPlot
+  FitThisBiomass=YearBiomass[1:length(RealToPlot)]  
+}
+
+FitThisBiomass[is.na(FitRealToPlot)]=NA
+
+#the two series need at least 3 matching data points to proceed with fit and plot
+if (sum(!is.na(FitThisBiomass))>3){
+
+lmfit=nls(FitThisBiomass~b+a*FitRealToPlot,algorithm="port",start=c(a=1,b=0),lower=c(a=0,b=-Inf),upper=c(a=Inf,b=Inf))
+SS = sum(residuals(lmfit)^2)
+ScaledReal = abs(coef(lmfit)[1]) * RealToPlot[!is.na(RealToPlot)] + coef(lmfit)[2]
+
+modeltop = max(thisbiomass,na.rm=T)
+realtop = max(ScaledReal,na.rm=T)
+if (modeltop>realtop) {                              
+ plottop = modeltop
+} else {
+ plottop = realtop
+}
+
+ylimit=c(0,max(plottop,na.rm=T)*1.1)
+
+
+plot(x=RealX[1:length(YearBiomass)],y=YearBiomass,main=paste(titlestring,"SS=",format(SS,scientific=TRUE,digits=2),sep=" "),type="l",ylim=ylimit,xlim=c(1980+startingyear,2010),cex=0.2,cex.axis=0.9,cex.main=0.9) 
+#plot(x=RealX[1:length(YearBiomass)],y=YearBiomass,main=titlestring,type="l",ylim=ylimit,xlim=c(1980+startingyear,2010),cex=0.2,cex.axis=0.9,cex.main=0.9) 
+  
+mtext("Year",1,outer=T,adj=.5,1.5)   
+mtext("Biomass (tonnes)",2,outer=T,adj=.5,1.5)
+par(new=T)
+
+points(x=RealX[!is.na(RealToPlot)],y=ScaledReal,type="p",ylim=ylimit,xlim=c(1980+startingyear,2010),cex=0.2,cex.axis=0.9,cex.main=0.9)
+par(new=T)
+
+#don't show these grey dots in a paper, just so we can see what's happening
+#scales first historical datapoint to the same value as the first model point
+#ScaledRealToPlot = RealToPlot * (thisbiomass[1]/RealToPlot[min(which(!is.na(RealToPlot)))])
+ScaledRealToPlot = RealToPlot * mean(thisbiomass[!is.na(thisbiomass)])/mean(RealToPlot[!is.na(RealToPlot)])
+points(x=RealX[1:length(RealToPlot)],y=ScaledRealToPlot,type="p",col="gray",ylim=ylimit,xlim=c(1980,2010),cex=0.2,cex.axis=0.9)
+
+ 
+}
+}
+
+#................
+
+}
+
+dev.off()
+
+}
+
+
+
+
+```
