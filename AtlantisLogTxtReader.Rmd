@@ -253,7 +253,7 @@ library(sm)
   #BIOMASS
   
   if (PlotAsTif == FALSE) { 
-  Outfile <- "Biomass_Plots.pdf"
+  Outfile <- paste(AtlantisRunFolder,"Biomass_Plots.pdf",sep="")
   pdf(Outfile)
   } 
   
@@ -269,7 +269,7 @@ library(sm)
           
     
     if (PlotAsTif == TRUE) {
-      Outfile = paste("Biomass",NumberOfFigs,".tif",sep="")    
+      Outfile = paste(AtlantisRunFolder,"Biomass",NumberOfFigs,".tif",sep="")    
       tiff(filename = Outfile,width=6, height=tifheight, units="in", res=600, compression = "lzw")
     }
     
@@ -339,7 +339,7 @@ library(sm)
   #RESERVE NITROGEN / INITITAL RESERVE NITROGEN , X=GROUP, Y=AGECLASS, Z=TIMESTEP 
 
   if (PlotAsTif == FALSE){  
-  Outfile <- "Res_N_Plots.pdf"
+  Outfile <- paste(AtlantisRunFolder,"Res_N_Plots.pdf",sep="")
   pdf(Outfile)  
   }
 
@@ -355,7 +355,7 @@ library(sm)
   {
 
       if (PlotAsTif == TRUE) {
-      Outfile = paste("Res_N",NumberOfFigs,".tif",sep="")    
+      Outfile = paste(AtlantisRunFolder,"Res_N",NumberOfFigs,".tif",sep="")    
       tiff(filename = Outfile,width=6, height=tifheight, units="in", res=600, compression = "lzw")
     }
     
@@ -435,7 +435,7 @@ library(sm)
 
   #STRUCTURAL NITROGEN / INITITAL STRUCTURAL NITROGEN , X=GROUP, Y=AGECLASS, Z=TIMESTEP 
   if (PlotAsTif == FALSE){  
-  Outfile <- "Str_N_Plots.pdf"
+  Outfile <- paste(AtlantisRunFolder,"Str_N_Plots.pdf",sep="")
   pdf(Outfile)  
   }
 
@@ -527,7 +527,7 @@ library(sm)
   #-------------------PLOT NUMBERS---------------------------------------------------
   
   if (PlotAsTif == FALSE){  
-  Outfile <- "Density_Plots.pdf"
+  Outfile <- paste(AtlantisRunFolder,"Density_Plots.pdf",sep="")
   pdf(Outfile)  
   }
   
@@ -543,7 +543,7 @@ library(sm)
   while (k <= length(Group_Names[ , 1]))
   {
     if (PlotAsTif == TRUE) {
-      Outfile = paste("Numbers",NumberOfFigs,".tif",sep="")    
+      Outfile = paste(AtlantisRunFolder,"Numbers",NumberOfFigs,".tif",sep="")    
       tiff(filename = Outfile,width=6, height=tifheight, units="in", res=600, compression = "lzw")
     }
     
@@ -643,7 +643,7 @@ Btimesteps<-as.numeric(as.character(Btimesteps))
 
 
  if (PlotAsTif == FALSE) { 
-  Outfile <- "HistoricalFits.pdf"
+  Outfile <- paste(AtlantisRunFolder,"HistoricalFits.pdf",sep="")
   pdf(Outfile)
   }
 
@@ -692,7 +692,7 @@ if (plotsfound %% (rows*columns) == 1 && plotthis == TRUE) {
   dev.off()
   print(paste(plotsfound,Group_Names[i,1],i,sep=" "))
   NumberOfFigs = NumberOfFigs + 1
-  Outfile = paste("Historical",NumberOfFigs,".tif",sep="")    
+  Outfile = paste(AtlantisRunFolder,"Historical",NumberOfFigs,".tif",sep="")    
   tiff(filename = Outfile,width=6, height=tifheight, units="in", res=600, compression = "lzw") 
   par(mfcol=c(rows,columns))
   par(mar=c(2,2,2,2))
